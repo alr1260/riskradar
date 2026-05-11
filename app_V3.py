@@ -509,78 +509,53 @@ with tab3:
             col_w.markdown(f"<div class='ampel-card {css}'>{bucket}<br><span style='font-size:1.5rem;font-weight:700'>{len(sub)} SKUs</span><br><span style='font-size:0.8rem'>⌀ Preis: {sub['Price'].mean():.2f} €</span><br><span style='font-size:0.8rem'>⌀ Umsatz: {sub['Revenue generated'].mean()/1000:.2f}k €</span><br><span style='font-size:0.8rem'>⌀ Defekt: {sub['Defect rates'].mean():.2f}%</span></div>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # Dropdown Kennzahl-Auswahl
+    # Balkendiagramme Produktkategorie + Standort
     st.markdown("<div class='section-header'>💰 Produktkategorie & Standort Performance</div>", unsafe_allow_html=True)
-    kpi_choice = st.selectbox("📊 Kennzahl zum Vergleich:",
-        ["⌀ Defektrate (%)","⌀ Gesamtlieferzeit (Tage)","⌀ Gesamtkosten (€)","⌀ Verfügbarkeit (%)"],
-        key="kpi_prod")
-    kpi_src_map = {
-        "⌀ Defektrate (%)":          "Defect rates",
-        "⌀ Gesamtlieferzeit (Tage)": "Gesamtlieferzeit",
-        "⌀ Gesamtkosten (€)":        "Costs",
-        "⌀ Verfügbarkeit (%)":       "Availability",
-    }
-    kpi_style_map = {
-        "⌀ Defektrate (%)":          "color:#ef4444",
-        "⌀ Gesamtlieferzeit (Tage)": "color:#f59e0b",
-        "⌀ Gesamtkosten (€)":        "color:#c8d4f0",
-        "⌀ Verfügbarkeit (%)":       "color:#4ade80",
-    }
-    def fmt_kpi(val, choice):
-        if "Defekt" in choice: return f"{val:.2f}%"
-        if "Lieferzeit" in choice: return f"{val:.2f} Tage"
-        if "Kosten" in choice: return f"€{val:.0f}"
-        return f"{val:.2f}%"
 
-    kpi_src = kpi_src_map[kpi_choice]
-    kpi_style = kpi_style_map[kpi_choice]
-    kpi_label = kpi_choice.split("(")[0].strip()
+    y_options = ["Umsatz (€)","Defektrate (%)","Gesamtlieferzeit (Tage)","Gesamtkosten (€)","Anzahl SKUs"]
+    y_src_map = {
+        "Umsatz (€)":              ("Revenue generated", "sum",  "Umsatz (Tsd. €)", lambda v: v/1000),
+        "Defektrate (%)":          ("Defect rates",      "mean", "⌀ Defektrate (%)", lambda v: v),
+        "Gesamtlieferzeit (Tage)": ("Gesamtlieferzeit",  "mean", "⌀ Lieferzeit (Tage)", lambda v: v),
+        "Gesamtkosten (€)":        ("Costs",             "mean", "⌀ Kosten (€)", lambda v: v),
+        "Anzahl SKUs":             ("SKU",               "count","Anzahl SKUs", lambda v: v),
+    }
 
-    cat_perf = scored.groupby("Product type").agg(
-        revenue=("Revenue generated","sum"),
-        sold=("Number of products sold","sum"),
-        kv=(kpi_src,"mean"),
-    ).sort_values("revenue",ascending=False).round(2)
-    max_rev_cat = cat_perf["revenue"].max()
+    col_y1, col_y2 = st.columns(2)
+    with col_y1:
+        y_choice_cat = st.selectbox("Y-Achse Produktkategorie:", y_options, key="y_cat")
+    with col_y2:
+        y_choice_loc = st.selectbox("Y-Achse Standort:", y_options, key="y_loc")
 
     up1, up2 = st.columns(2)
+
     with up1:
-        for prod, row in cat_perf.iterrows():
-            color = PROD_COLORS.get(prod,"#2563eb")
-            bar_pct = row["revenue"]/max_rev_cat*100
-            kv_str = fmt_kpi(row["kv"], kpi_choice)
-            st.markdown(
-                f"<div class='umsatz-card'>"
-                f"<div class='umsatz-card-title' style='color:{color}'>{prod.capitalize()} "
-                f"<span style='float:right;color:#c8d4f0'>{row['revenue']/1000:.0f}k €</span></div>"
-                f"<div style='display:flex;gap:24px;font-size:0.82rem;color:#8899bb'>"
-                f"<span>Verkauft<br><b style='color:#c8d4f0;font-size:1.0rem'>{int(row['sold']):,}</b></span>"
-                f"<span>{kpi_label}<br><b style='{kpi_style};font-size:1.0rem'>{kv_str}</b></span>"
-                f"</div>"
-                f"<div class='umsatz-bar' style='width:{bar_pct:.0f}%;background:{color}'></div>"
-                f"</div>",
-                unsafe_allow_html=True)
+        src, agg, ylabel, transform = y_src_map[y_choice_cat]
+        cat_perf = scored.groupby("Product type").agg(val=(src, agg)).round(2)
+        cat_perf["val_t"] = cat_perf["val"].apply(transform)
+        fig_cat, ax_cat = plt.subplots(figsize=(6, 4))
+        colors_cat = [PROD_COLORS.get(p, "#2563eb") for p in cat_perf.index]
+        bars_cat = ax_cat.bar(cat_perf.index, cat_perf["val_t"], color=colors_cat, width=0.5, zorder=3)
+        ax_cat.set_ylabel(ylabel)
+        ax_cat.set_xlabel("Produktkategorie")
+        ax_cat.grid(axis="y", zorder=0)
+        for b, v in zip(bars_cat, cat_perf["val_t"]):
+            ax_cat.text(b.get_x()+b.get_width()/2, v*1.01, f"{v:.1f}", ha="center", va="bottom", fontsize=10, color="#c8d4f0")
+        plt.tight_layout(); st.pyplot(fig_cat); plt.close()
 
     with up2:
-        st.markdown("<div class='section-header'>📍 Standort Performance</div>", unsafe_allow_html=True)
-        loc_perf = scored.groupby("Location").agg(
-            revenue=("Revenue generated","sum"),
-            n=("SKU","count"),
-            kv=(kpi_src,"mean"),
-        ).sort_values("revenue",ascending=False).round(2)
-        max_rev_loc = loc_perf["revenue"].max()
-        for i,(loc,row) in enumerate(loc_perf.iterrows()):
-            bar_pct = row["revenue"]/max_rev_loc*100
-            kv_str = fmt_kpi(row["kv"], kpi_choice)
-            st.markdown(
-                f"<div class='umsatz-card'>"
-                f"<div style='font-weight:600;color:#c8d4f0'>{LOC_MEDALS[i]} {loc} "
-                f"<span style='float:right;color:#4ade80'>{row['revenue']/1000:.0f}k €</span></div>"
-                f"<div style='font-size:0.8rem;color:#8899bb;margin-top:4px'>SKUs: {int(row['n'])} · {kpi_label}: "
-                f"<b style='{kpi_style}'>{kv_str}</b></div>"
-                f"<div class='umsatz-bar' style='width:{bar_pct:.0f}%;background:#2563eb'></div>"
-                f"</div>",
-                unsafe_allow_html=True)
+        src, agg, ylabel, transform = y_src_map[y_choice_loc]
+        loc_perf = scored.groupby("Location").agg(val=(src, agg)).sort_values("val", ascending=False).round(2)
+        loc_perf["val_t"] = loc_perf["val"].apply(transform)
+        fig_loc, ax_loc = plt.subplots(figsize=(6, 4))
+        bars_loc = ax_loc.bar(loc_perf.index, loc_perf["val_t"], color="#2563eb", width=0.5, zorder=3)
+        ax_loc.set_ylabel(ylabel)
+        ax_loc.set_xlabel("Standort")
+        ax_loc.grid(axis="y", zorder=0)
+        plt.xticks(rotation=15)
+        for b, v in zip(bars_loc, loc_perf["val_t"]):
+            ax_loc.text(b.get_x()+b.get_width()/2, v*1.01, f"{v:.1f}", ha="center", va="bottom", fontsize=10, color="#c8d4f0")
+        plt.tight_layout(); st.pyplot(fig_loc); plt.close()
 
     st.markdown("---")
 
@@ -590,7 +565,7 @@ with tab3:
     pivot_seg = scored.groupby(["Supplier name","Produkt-Bucket"]).size().unstack(fill_value=0)
     fig_seg, ax_seg = plt.subplots(figsize=(10, 4))
     xs = np.arange(len(pivot_seg)); ws = 0.25
-    for idx_b, b in enumerate(["\U0001f947 Premium","\U0001f535 Standard","\U0001f49a Budget"]):
+    for idx_b, b in enumerate(["🥇 Premium","🔵 Standard","💚 Budget"]):
         if b in pivot_seg.columns:
             bars_s = ax_seg.bar(xs + idx_b*ws, pivot_seg[b].values, ws, label=b,
                                 color=BUCKET_COLORS.get(b,"#aaa"), alpha=0.9, zorder=3)
