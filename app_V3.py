@@ -564,7 +564,9 @@ with tab3:
         html_table += f"<th>{p.capitalize()}</th>"
     html_table += "</tr>"
     for sup_name in cross.index:
-        html_table += f"<tr><td style='color:{SUP_COLORS.get(sup_name,\"#aaa\")};font-weight:600;background:#1a2035'>{'Sup '+sup_name.replace('Supplier ','')}</td>"
+        sup_color = SUP_COLORS.get(sup_name, "#aaa")
+        sup_label = "Sup " + sup_name.replace("Supplier ", "")
+        html_table += f"<tr><td style='color:{sup_color};font-weight:600;background:#1a2035'>{sup_label}</td>"
         for p in prods:
             v = cross.loc[sup_name,p]
             pct = v/max_val
